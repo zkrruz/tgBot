@@ -157,8 +157,10 @@ def build_dispatcher(settings: Settings, storage: Storage) -> Dispatcher:
                 resume_text=resume_text,
                 vacancies=vacancies,
                 report_type=report_type,
-                api_key=settings.openai_api_key,
-                model=settings.openai_model,
+                gigachat_credentials=settings.gigachat_credentials,
+                gigachat_model=settings.gigachat_model,
+                gigachat_scope=settings.gigachat_scope,
+                gigachat_verify_ssl=settings.gigachat_verify_ssl,
             )
             report_path = build_report(result, report_type, settings.reports_dir)
         except Exception as exc:
@@ -194,3 +196,5 @@ def _report_keyboard() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+

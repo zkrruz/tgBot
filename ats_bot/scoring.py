@@ -2,10 +2,11 @@
 
 import json
 import re
+import uuid
 from collections import Counter
 from dataclasses import dataclass
 
-from openai import OpenAI
+import requests
 
 from ats_bot.storage import Vacancy
 
@@ -17,6 +18,9 @@ Kafka, RabbitMQ, BPMN, UML, ERD, sequence diagram, activity diagram, JSON, XML,
 Confluence, Jira, бизнес-процессы, документация, нефункциональные требования,
 финтех, банки, платежи, высоконагруженные системы, Agile, Scrum.
 """
+
+GIGACHAT_AUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+GIGACHAT_CHAT_URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 
 
 @dataclass(frozen=True)
@@ -87,12 +91,22 @@ def evaluate_resume_against_market(
     resume_text: str,
     vacancies: list[Vacancy],
     report_type: str,
-    api_key: str | None,
-    model: str,
+    gigachat_credentials: str | None,
+    gigachat_model: str,
+    gigachat_scope: str = "GIGACHAT_API_PERS",
+    gigachat_verify_ssl: bool = True,
 ) -> AtsResult:
-    if api_key:
+    if gigachat_credentials:
         try:
-            return _evaluate_with_openai(resume_text, vacancies, report_type, api_key, model)
+            return _evaluate_with_gigachat(
+                resume_text,
+                vacancies,
+                report_type,
+                gigachat_credentials,
+                gigachat_model,
+                gigachat_scope,
+                gigachat_verify_ssl,
+            )
         except Exception:
             return _evaluate_locally(resume_text, vacancies)
     return _evaluate_locally(resume_text, vacancies)
@@ -103,61 +117,85 @@ def evaluate_resume(
     resume_text: str,
     vacancy: Vacancy,
     report_type: str,
-    api_key: str | None,
-    model: str,
+    gigachat_credentials: str | None,
+    gigachat_model: str,
+    gigachat_scope: str = "GIGACHAT_API_PERS",
+    gigachat_verify_ssl: bool = True,
 ) -> AtsResult:
-    return evaluate_resume_against_market(resume_text, [vacancy], report_type, api_key, model)
+    return evaluate_resume_against_market(
+        resume_text,
+        [vacancy],
+        report_type,
+        gigachat_credentials,
+        gigachat_model,
+        gigachat_scope,
+        gigachat_verify_ssl,
+    )
 
 
-def _evaluate_with_openai(
+def _evaluate_with_gigachat(
     resume_text: str,
     vacancies: list[Vacancy],
     report_type: str,
-    api_key: str,
+    credentials: str,
     model: str,
+    scope: str,
+    verify_ssl: bool,
 ) -> AtsResult:
     local = _evaluate_locally(resume_text, vacancies)
     market_text = "\n\n".join(f"{v.title}\n{v.description}" for v in vacancies[:80])
     if not market_text:
         market_text = DEFAULT_SYSTEM_ANALYST_MARKET
 
-    client = OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model=model,
-        temperature=0.2,
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Ты senior ATS analyst для кандидатов на роль системного аналитика. "
-                    "Верни строгий JSON на русском: candidate_name, summary, recommendation, "
-                    "level, primary_domain, strengths, risks, missing_requirements, quick_actions, "
-                    "deep_actions, interview_questions, employer_view. employer_view - массив объектов "
-                    "с keys name,value. Не выдумывай факты, опирайся на резюме и рынок."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "resume_text": resume_text[:26000],
-                        "market_dataset_sample": market_text[:28000],
-                        "report_type": report_type,
-                        "local_metrics": {
-                            "score": local.score,
-                            "grade": local.grade,
-                            "level": local.level,
-                            "domain": local.primary_domain,
-                            "sample_size": local.market_match.sample_size,
+    token = _get_gigachat_token(credentials, scope, verify_ssl)
+    response = requests.post(
+        GIGACHAT_CHAT_URL,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        json={
+            "model": model,
+            "temperature": 0.2,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты senior ATS analyst для кандидатов на роль системного аналитика. "
+                        "Верни только валидный JSON на русском без markdown. Ключи: "
+                        "candidate_name, summary, recommendation, level, primary_domain, "
+                        "strengths, risks, missing_requirements, quick_actions, deep_actions, "
+                        "interview_questions, employer_view. employer_view - массив объектов "
+                        "с keys name,value. Не выдумывай факты, опирайся на резюме и рынок."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "resume_text": resume_text[:26000],
+                            "market_dataset_sample": market_text[:28000],
+                            "report_type": report_type,
+                            "local_metrics": {
+                                "score": local.score,
+                                "grade": local.grade,
+                                "level": local.level,
+                                "domain": local.primary_domain,
+                                "sample_size": local.market_match.sample_size,
+                            },
                         },
-                    },
-                    ensure_ascii=False,
-                ),
-            },
-        ],
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+        },
+        timeout=60,
+        verify=verify_ssl,
     )
-    payload = json.loads(response.choices[0].message.content or "{}")
+    response.raise_for_status()
+    content = response.json()["choices"][0]["message"]["content"]
+    payload = _json_from_model_content(content)
     return AtsResult(
         candidate_name=str(payload.get("candidate_name") or local.candidate_name),
         role=local.role,
@@ -179,6 +217,37 @@ def _evaluate_with_openai(
         interview_questions=_as_list(payload.get("interview_questions")) or local.interview_questions,
         skill_matches=local.skill_matches,
     )
+
+
+def _get_gigachat_token(credentials: str, scope: str, verify_ssl: bool) -> str:
+    response = requests.post(
+        GIGACHAT_AUTH_URL,
+        headers={
+            "Authorization": f"Basic {credentials}",
+            "RqUID": str(uuid.uuid4()),
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        },
+        data={"scope": scope},
+        timeout=30,
+        verify=verify_ssl,
+    )
+    response.raise_for_status()
+    return str(response.json()["access_token"])
+
+
+def _json_from_model_content(content: str) -> dict:
+    content = content.strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*", "", content)
+        content = re.sub(r"\s*```$", "", content)
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+        if not match:
+            raise
+        return json.loads(match.group(0))
 
 
 def _evaluate_locally(resume_text: str, vacancies: list[Vacancy]) -> AtsResult:
@@ -476,3 +545,5 @@ def _employer_view(value: object) -> list[tuple[str, str]]:
 
 def _clamp_score(value: int) -> int:
     return max(0, min(int(value), 100))
+
+
