@@ -10,10 +10,9 @@ from dotenv import load_dotenv
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
-    gigachat_credentials: str | None
-    gigachat_model: str
-    gigachat_scope: str
-    gigachat_verify_ssl: bool
+    qwen_api_key: str | None
+    qwen_model: str
+    qwen_base_url: str
     admin_ids: set[int]
     database_path: Path
     reports_dir: Path
@@ -28,12 +27,6 @@ def _parse_admin_ids(raw: str) -> set[int]:
     return ids
 
 
-def _parse_bool(raw: str, default: bool = True) -> bool:
-    if not raw:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "y", "да"}
-
-
 def load_settings() -> Settings:
     load_dotenv(encoding="utf-8-sig")
     bot_token = os.getenv("BOT_TOKEN", "").strip()
@@ -41,10 +34,9 @@ def load_settings() -> Settings:
         raise RuntimeError("BOT_TOKEN is required. Put it in .env or environment variables.")
     return Settings(
         bot_token=bot_token,
-        gigachat_credentials=os.getenv("GIGACHAT_CREDENTIALS") or None,
-        gigachat_model=os.getenv("GIGACHAT_MODEL", "GigaChat"),
-        gigachat_scope=os.getenv("GIGACHAT_SCOPE", "GIGACHAT_API_PERS"),
-        gigachat_verify_ssl=_parse_bool(os.getenv("GIGACHAT_VERIFY_SSL", "true")),
+        qwen_api_key=os.getenv("QWEN_API_KEY") or None,
+        qwen_model=os.getenv("QWEN_MODEL", "qwen-plus"),
+        qwen_base_url=os.getenv("QWEN_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").rstrip("/"),
         admin_ids=_parse_admin_ids(os.getenv("ADMIN_IDS", "")),
         database_path=Path(os.getenv("DATABASE_PATH", "data/ats_bot.sqlite3")),
         reports_dir=Path(os.getenv("REPORTS_DIR", "reports")),

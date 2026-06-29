@@ -2,7 +2,6 @@
 
 import json
 import re
-import uuid
 from collections import Counter
 from dataclasses import dataclass
 
@@ -19,8 +18,7 @@ Confluence, Jira, бизнес-процессы, документация, не�
 финтех, банки, платежи, высоконагруженные системы, Agile, Scrum.
 """
 
-GIGACHAT_AUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
-GIGACHAT_CHAT_URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+QWEN_DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
 
 @dataclass(frozen=True)
@@ -91,21 +89,19 @@ def evaluate_resume_against_market(
     resume_text: str,
     vacancies: list[Vacancy],
     report_type: str,
-    gigachat_credentials: str | None,
-    gigachat_model: str,
-    gigachat_scope: str = "GIGACHAT_API_PERS",
-    gigachat_verify_ssl: bool = True,
+    qwen_api_key: str | None,
+    qwen_model: str,
+    qwen_base_url: str = QWEN_DEFAULT_BASE_URL,
 ) -> AtsResult:
-    if gigachat_credentials:
+    if qwen_api_key:
         try:
-            return _evaluate_with_gigachat(
+            return _evaluate_with_qwen(
                 resume_text,
                 vacancies,
                 report_type,
-                gigachat_credentials,
-                gigachat_model,
-                gigachat_scope,
-                gigachat_verify_ssl,
+                qwen_api_key,
+                qwen_model,
+                qwen_base_url,
             )
         except Exception:
             return _evaluate_locally(resume_text, vacancies)
@@ -117,41 +113,37 @@ def evaluate_resume(
     resume_text: str,
     vacancy: Vacancy,
     report_type: str,
-    gigachat_credentials: str | None,
-    gigachat_model: str,
-    gigachat_scope: str = "GIGACHAT_API_PERS",
-    gigachat_verify_ssl: bool = True,
+    qwen_api_key: str | None,
+    qwen_model: str,
+    qwen_base_url: str = QWEN_DEFAULT_BASE_URL,
 ) -> AtsResult:
     return evaluate_resume_against_market(
         resume_text,
         [vacancy],
         report_type,
-        gigachat_credentials,
-        gigachat_model,
-        gigachat_scope,
-        gigachat_verify_ssl,
+        qwen_api_key,
+        qwen_model,
+        qwen_base_url,
     )
 
 
-def _evaluate_with_gigachat(
+def _evaluate_with_qwen(
     resume_text: str,
     vacancies: list[Vacancy],
     report_type: str,
-    credentials: str,
+    api_key: str,
     model: str,
-    scope: str,
-    verify_ssl: bool,
+    base_url: str,
 ) -> AtsResult:
     local = _evaluate_locally(resume_text, vacancies)
     market_text = "\n\n".join(f"{v.title}\n{v.description}" for v in vacancies[:80])
     if not market_text:
         market_text = DEFAULT_SYSTEM_ANALYST_MARKET
 
-    token = _get_gigachat_token(credentials, scope, verify_ssl)
     response = requests.post(
-        GIGACHAT_CHAT_URL,
+        f"{base_url.rstrip('/')}/chat/completions",
         headers={
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         },
@@ -191,7 +183,6 @@ def _evaluate_with_gigachat(
             ],
         },
         timeout=60,
-        verify=verify_ssl,
     )
     response.raise_for_status()
     content = response.json()["choices"][0]["message"]["content"]
@@ -217,23 +208,6 @@ def _evaluate_with_gigachat(
         interview_questions=_as_list(payload.get("interview_questions")) or local.interview_questions,
         skill_matches=local.skill_matches,
     )
-
-
-def _get_gigachat_token(credentials: str, scope: str, verify_ssl: bool) -> str:
-    response = requests.post(
-        GIGACHAT_AUTH_URL,
-        headers={
-            "Authorization": f"Basic {credentials}",
-            "RqUID": str(uuid.uuid4()),
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-        },
-        data={"scope": scope},
-        timeout=30,
-        verify=verify_ssl,
-    )
-    response.raise_for_status()
-    return str(response.json()["access_token"])
 
 
 def _json_from_model_content(content: str) -> dict:
@@ -545,5 +519,6 @@ def _employer_view(value: object) -> list[tuple[str, str]]:
 
 def _clamp_score(value: int) -> int:
     return max(0, min(int(value), 100))
+
 
 

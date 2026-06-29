@@ -48,18 +48,15 @@ copy .env.example .env
 
 ```env
 BOT_TOKEN=токен_от_BotFather
-GIGACHAT_CREDENTIALS=authorization_key_из_кабинета_Sber
-GIGACHAT_MODEL=GigaChat
-GIGACHAT_SCOPE=GIGACHAT_API_PERS
-GIGACHAT_VERIFY_SSL=true
+QWEN_API_KEY=ключ_из_Qwen_API_Platform
+QWEN_MODEL=qwen-plus
+QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 ADMIN_IDS=123456789
 DATABASE_PATH=data/ats_bot.sqlite3
 REPORTS_DIR=reports
 ```
 
-`GIGACHAT_CREDENTIALS` - это Authorization Key из личного кабинета Sber Developers для GigaChat API. Если его не указывать, бот использует локальную keyword-based оценку. С GigaChat отчет становится более содержательным и похожим на экспертный разбор.
-
-Если на Windows возникнет ошибка SSL-сертификата при обращении к GigaChat, для локальной разработки можно временно поставить `GIGACHAT_VERIFY_SSL=false`. Для продакшена лучше настроить доверенный сертификат и оставить проверку включенной.
+`QWEN_API_KEY` - это API key из Qwen API Platform / Model Studio. Если его не указывать, бот использует локальную keyword-based оценку. С Qwen отчет становится более содержательным и похожим на экспертный разбор.
 
 ## Запуск
 
@@ -70,4 +67,6 @@ python main.py
 ## Примечания по DOC
 
 Старый `.doc` является бинарным форматом. Для его чтения на сервере нужен один из инструментов: `antiword`, `catdoc` или LibreOffice (`soffice`). Форматы PDF, DOCX и RTF читаются Python-библиотеками из `requirements.txt`.
+
+
 
