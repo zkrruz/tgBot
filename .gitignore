@@ -5,3 +5,5 @@ __pycache__/
 data/
 reports/
 .DS_Store
+tmp/
+reports_test/

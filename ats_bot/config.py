@@ -27,7 +27,7 @@ def _parse_admin_ids(raw: str) -> set[int]:
 
 
 def load_settings() -> Settings:
-    load_dotenv()
+    load_dotenv(encoding="utf-8-sig")
     bot_token = os.getenv("BOT_TOKEN", "").strip()
     if not bot_token:
         raise RuntimeError("BOT_TOKEN is required. Put it in .env or environment variables.")
@@ -39,3 +39,4 @@ def load_settings() -> Settings:
         database_path=Path(os.getenv("DATABASE_PATH", "data/ats_bot.sqlite3")),
         reports_dir=Path(os.getenv("REPORTS_DIR", "reports")),
     )
+
